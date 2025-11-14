@@ -1,14 +1,12 @@
-version: '3.8'
-
 services:
   app:
     build:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "8080:8080"
+      - '8080:8080'
     environment:
-      DATABASE_URL: "postgres://user:password@db:5432/avito_trainee?sslmode=disable"
+      DATABASE_URL: ${DATABASE_URL}
     depends_on:
       - db
     networks:
@@ -17,11 +15,16 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: avito_trainee
+      POSTGRES_DB: ${POSTGRES_DB:-avito_trainee}
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
     volumes:
       - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d ${POSTGRES_DB:-avito_trainee}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     networks:
       - app-network
 
