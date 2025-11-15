@@ -10,10 +10,12 @@ DATABASE_URL ?= postgres://user:password@localhost:5432/avito_trainee?sslmode=di
 TEST_DATABASE_URL ?= postgres://user:password@localhost:5432/avito_trainee_test?sslmode=disable
 ENV ?= development
 
+MODULE_PATH=deplagene/avito-tech-internship
+
 # Build the application
 build:
 	@echo "Building $(APP_NAME)..."
-	@go build -o $(BUILD_DIR)/$(APP_NAME) $(CMD_DIR)/main.go
+	@go build -o $(BUILD_DIR)/$(APP_NAME) ./cmd
 
 # Run the application locally
 run: build
@@ -23,7 +25,7 @@ run: build
 # Run unit tests
 test:
 	@echo "Running unit tests..."
-	@go test -v ./...
+	@go test -v $(shell go list ./... | grep -v /test)
 
 # Run integration tests
 test-integration:
@@ -53,7 +55,7 @@ migrate-down:
 # Run linter (golangci-lint)
 lint:
 	@echo "Running golangci-lint..."
-	@golangci-lint run ./...
+	@/home/deplagene/go/bin/golangci-lint run ./...
 
 # Clean up build artifacts
 clean:

@@ -5,6 +5,7 @@ import (
 	"deplagene/avito-tech-internship/api"
 	"deplagene/avito-tech-internship/types"
 	"fmt"
+	"log/slog" // Add slog import
 	"math/rand"
 	"time"
 
@@ -17,6 +18,7 @@ type Service struct {
 	userRepo types.UserRepository
 	teamRepo types.TeamRepository
 	db       *pgxpool.Pool // Для управления транзакциями
+	logger   *slog.Logger  // Add logger field
 }
 
 // NewService создает новый экземпляр PullRequestService.
@@ -25,12 +27,14 @@ func NewService(
 	userRepo types.UserRepository,
 	teamRepo types.TeamRepository,
 	db *pgxpool.Pool,
+	logger *slog.Logger, // Add logger parameter
 ) *Service {
 	return &Service{
 		prRepo:   prRepo,
 		userRepo: userRepo,
 		teamRepo: teamRepo,
 		db:       db,
+		logger:   logger,
 	}
 }
 
@@ -42,10 +46,14 @@ func (s *Service) CreatePullRequest(ctx context.Context, pr api.PullRequest) (*a
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			tx.Rollback(ctx)
+			if err := tx.Rollback(ctx); err != nil {
+				s.logger.Error("failed to rollback transaction after panic", "error", err)
+			}
 			panic(r)
 		} else if err != nil {
-			tx.Rollback(ctx)
+			if err := tx.Rollback(ctx); err != nil {
+				s.logger.Error("failed to rollback transaction", "error", err)
+			}
 		} else {
 			err = tx.Commit(ctx)
 		}
@@ -99,10 +107,14 @@ func (s *Service) MergePullRequest(ctx context.Context, prID string) (*api.PullR
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			tx.Rollback(ctx)
+			if err := tx.Rollback(ctx); err != nil {
+				s.logger.Error("failed to rollback transaction after panic", "error", err)
+			}
 			panic(r)
 		} else if err != nil {
-			tx.Rollback(ctx)
+			if err := tx.Rollback(ctx); err != nil {
+				s.logger.Error("failed to rollback transaction", "error", err)
+			}
 		} else {
 			err = tx.Commit(ctx)
 		}
@@ -137,10 +149,14 @@ func (s *Service) ReassignReviewer(ctx context.Context, prID, oldReviewerID stri
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			tx.Rollback(ctx)
+			if err := tx.Rollback(ctx); err != nil {
+				s.logger.Error("failed to rollback transaction after panic", "error", err)
+			}
 			panic(r)
 		} else if err != nil {
-			tx.Rollback(ctx)
+			if err := tx.Rollback(ctx); err != nil {
+				s.logger.Error("failed to rollback transaction", "error", err)
+			}
 		} else {
 			err = tx.Commit(ctx)
 		}
@@ -181,9 +197,7 @@ func (s *Service) ReassignReviewer(ctx context.Context, prID, oldReviewerID stri
 
 	// Ищем кандидатов на замену (активных пользователей из той же команды, исключая текущих ревьюверов)
 	var currentReviewers []string
-	for _, rID := range pr.AssignedReviewers {
-		currentReviewers = append(currentReviewers, rID)
-	}
+	currentReviewers = append(currentReviewers, pr.AssignedReviewers...) // Fix gosimple error
 
 	allTeamMembers, err := s.userRepo.GetActiveUsersByTeam(ctx, tx, oldReviewerTeam, "", 0) // Get all active members
 	if err != nil {
@@ -209,8 +223,9 @@ func (s *Service) ReassignReviewer(ctx context.Context, prID, oldReviewerID stri
 	}
 
 	// Выбираем случайного кандидата
-	rand.Seed(time.Now().UnixNano())
-	newReviewer := replacementCandidates[rand.Intn(len(replacementCandidates))]
+	source := rand.NewSource(time.Now().UnixNano()) // Fix deprecated rand.Seed
+	r := rand.New(source)
+	newReviewer := replacementCandidates[r.Intn(len(replacementCandidates))]
 
 	// Удаляем старого и добавляем нового ревьювера
 	if err := s.prRepo.RemoveReviewer(ctx, tx, prID, oldReviewerID); err != nil {
@@ -239,10 +254,14 @@ func (s *Service) GetPullRequestsByReviewer(ctx context.Context, userID string) 
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			tx.Rollback(ctx)
+			if err := tx.Rollback(ctx); err != nil {
+				s.logger.Error("failed to rollback transaction after panic", "error", err)
+			}
 			panic(r)
 		} else if err != nil {
-			tx.Rollback(ctx)
+			if err := tx.Rollback(ctx); err != nil {
+				s.logger.Error("failed to rollback transaction", "error", err)
+			}
 		} else {
 			err = tx.Commit(ctx)
 		}

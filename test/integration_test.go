@@ -83,7 +83,9 @@ func teardownTestEnvironment() {
 	cmd := exec.Command("docker-compose", "down", "-v") // -v для удаления томов
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	cmd.Run() // Не проверяем ошибку, так как может быть уже остановлен
+	if err := cmd.Run(); err != nil {
+		fmt.Printf("Error tearing down docker-compose: %v\n", err)
+	}
 }
 
 func clearDatabase() {

@@ -45,7 +45,9 @@ func (h *Handler) sendError(w http.ResponseWriter, r *http.Request, code api.Err
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(httpStatus)
-	json.NewEncoder(w).Encode(resp)
+	if err := json.NewEncoder(w).Encode(resp); err != nil { // Added error check
+		h.logger.Error("failed to encode error response", "error", err)
+	}
 }
 
 // PostPullRequestCreate создает PR и автоматически назначает до 2 ревьюверов из команды автора
@@ -71,9 +73,11 @@ func (h *Handler) PostPullRequestCreate(w http.ResponseWriter, r *http.Request) 
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(struct {
+	if err := json.NewEncoder(w).Encode(struct { // Added error check
 		Pr api.PullRequest `json:"pr"`
-	}{Pr: *createdPR})
+	}{Pr: *createdPR}); err != nil {
+		h.logger.Error("failed to encode response", "error", err)
+	}
 }
 
 // PostPullRequestMerge помечает PR как MERGED (идемпотентная операция)
@@ -93,9 +97,11 @@ func (h *Handler) PostPullRequestMerge(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(struct {
+	if err := json.NewEncoder(w).Encode(struct { // Added error check
 		Pr api.PullRequest `json:"pr"`
-	}{Pr: *mergedPR})
+	}{Pr: *mergedPR}); err != nil {
+		h.logger.Error("failed to encode response", "error", err)
+	}
 }
 
 // PostPullRequestReassign переназначает конкретного ревьювера на другого из его команды
@@ -115,10 +121,12 @@ func (h *Handler) PostPullRequestReassign(w http.ResponseWriter, r *http.Request
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(struct {
+	if err := json.NewEncoder(w).Encode(struct { // Added error check
 		Pr         api.PullRequest `json:"pr"`
 		ReplacedBy string          `json:"replaced_by"`
-	}{Pr: *reassignedPR, ReplacedBy: newReviewerID})
+	}{Pr: *reassignedPR, ReplacedBy: newReviewerID}); err != nil {
+		h.logger.Error("failed to encode response", "error", err)
+	}
 }
 
 // PostTeamAdd создает команду с участниками (создаёт/обновляет пользователей)
@@ -138,9 +146,11 @@ func (h *Handler) PostTeamAdd(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(struct {
+	if err := json.NewEncoder(w).Encode(struct { // Added error check
 		Team api.Team `json:"team"`
-	}{Team: *createdTeam})
+	}{Team: *createdTeam}); err != nil {
+		h.logger.Error("failed to encode response", "error", err)
+	}
 }
 
 // GetTeamGet получает команду с участниками
@@ -154,7 +164,9 @@ func (h *Handler) GetTeamGet(w http.ResponseWriter, r *http.Request, params api.
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(team)
+	if err := json.NewEncoder(w).Encode(team); err != nil { // Added error check
+		h.logger.Error("failed to encode response", "error", err)
+	}
 }
 
 // GetUsersGetReview получает PR'ы, где пользователь назначен ревьювером
@@ -168,10 +180,12 @@ func (h *Handler) GetUsersGetReview(w http.ResponseWriter, r *http.Request, para
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(struct {
+	if err := json.NewEncoder(w).Encode(struct { // Added error check
 		UserId       string                 `json:"user_id"`
 		PullRequests []api.PullRequestShort `json:"pull_requests"`
-	}{UserId: params.UserId, PullRequests: prs})
+	}{UserId: params.UserId, PullRequests: prs}); err != nil {
+		h.logger.Error("failed to encode response", "error", err)
+	}
 }
 
 // PostUsersSetIsActive устанавливает флаг активности пользователя
@@ -191,18 +205,20 @@ func (h *Handler) PostUsersSetIsActive(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(struct {
+	if err := json.NewEncoder(w).Encode(struct { // Added error check
 		User api.User `json:"user"`
-	}{User: *updatedUser})
+	}{User: *updatedUser}); err != nil {
+		h.logger.Error("failed to encode response", "error", err)
+	}
 }
 
 // GetHealth implements the /health endpoint.
 func (h *Handler) GetHealth(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("OK"))
+	if _, err := w.Write([]byte("OK")); err != nil { // Added error check
+		h.logger.Error("failed to write health response", "error", err)
+	}
 }
 
 // Проверка соответствия интерфейсу во время компиляции
 var _ api.ServerInterface = (*Handler)(nil)
-var _ api.ServerInterface = (*Handler)(nil) // This line is a duplicate, will be fixed in the next step
-

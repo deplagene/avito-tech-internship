@@ -49,9 +49,9 @@ func main() {
 	prRepo := pullrequest.NewPullRequestRepository(pool)
 
 	// 5. Initialize Services
-	teamService := team.NewService(teamRepo, userRepo, pool)
-	userService := user.NewService(userRepo, pool)
-	prService := pullrequest.NewService(prRepo, userRepo, teamRepo, pool)
+	teamService := team.NewService(teamRepo, userRepo, pool, logger)
+	userService := user.NewService(userRepo, pool, logger)
+	prService := pullrequest.NewService(prRepo, userRepo, teamRepo, pool, logger)
 
 	// 6. Create HTTP Handler
 	apiHandler := handler.NewHandler(teamService, userService, prService, logger)

@@ -5,6 +5,7 @@ import (
 	"deplagene/avito-tech-internship/api"
 	"deplagene/avito-tech-internship/types"
 	"fmt"
+	"log/slog" // Add slog import
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -13,13 +14,15 @@ import (
 type Service struct {
 	userRepo types.UserRepository
 	db       *pgxpool.Pool // Для управления транзакциями
+	logger   *slog.Logger  // Add logger field
 }
 
 // NewService создает новый экземпляр UserService.
-func NewService(userRepo types.UserRepository, db *pgxpool.Pool) *Service {
+func NewService(userRepo types.UserRepository, db *pgxpool.Pool, logger *slog.Logger) *Service {
 	return &Service{
 		userRepo: userRepo,
 		db:       db,
+		logger:   logger,
 	}
 }
 
@@ -31,10 +34,14 @@ func (s *Service) SetUserIsActive(ctx context.Context, userID string, isActive b
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			tx.Rollback(ctx)
+			if err := tx.Rollback(ctx); err != nil {
+				s.logger.Error("failed to rollback transaction after panic", "error", err)
+			}
 			panic(r)
 		} else if err != nil {
-			tx.Rollback(ctx)
+			if err := tx.Rollback(ctx); err != nil {
+				s.logger.Error("failed to rollback transaction", "error", err)
+			}
 		} else {
 			err = tx.Commit(ctx)
 		}
