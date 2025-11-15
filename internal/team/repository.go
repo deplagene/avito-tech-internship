@@ -2,37 +2,35 @@ package team
 
 import (
 	"context"
-	"deplagene/avito-tech-internship/api"
-	"deplagene/avito-tech-internship/services/user" // Import the user repository
+	"deplagene/avito-tech-internship/cmd/api"
+	"deplagene/avito-tech-internship/internal/user"
 	"deplagene/avito-tech-internship/types"
+	"fmt"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// TeamRepository реализует интерфейс types.TeamRepository для работы с PostgreSQL.
 type TeamRepository struct {
 	db *pgxpool.Pool
 }
 
-// NewTeamRepository создает новый экземпляр TeamRepository.
 func NewTeamRepository(db *pgxpool.Pool) *TeamRepository {
 	return &TeamRepository{db: db}
 }
 
 // Create создает новую команду и ее участников в рамках одной транзакции.
 func (r *TeamRepository) Create(ctx context.Context, tx pgx.Tx, team api.Team) error {
-	// Создаем команду
-	sql := "INSERT INTO teams (team_name) VALUES ($1) ON CONFLICT (team_name) DO NOTHING"
-	if _, err := tx.Exec(ctx, sql, team.TeamName); err != nil {
-		return err
+	const op = "team.repository.Create"
+
+	if _, err := tx.Exec(ctx, createTeamQuery, team.TeamName); err != nil {
+		return fmt.Errorf("%s: %w", op, err)
 	}
 
-	// Добавляем/обновляем участников
-	userRepo := user.NewUserRepository(r.db) // Create an instance of UserRepository
+	userRepo := user.NewUserRepository(r.db)
 	for _, member := range team.Members {
 		if err := userRepo.Upsert(ctx, tx, member, team.TeamName); err != nil {
-			return err // Ошибка при добавлении участника, транзакция будет отменена
+			return fmt.Errorf("%s: %w", op, err)
 		}
 	}
 
@@ -41,14 +39,13 @@ func (r *TeamRepository) Create(ctx context.Context, tx pgx.Tx, team api.Team) e
 
 // GetByName возвращает команду и ее участников по имени.
 func (r *TeamRepository) GetByName(ctx context.Context, tx pgx.Tx, name string) (*api.Team, error) {
-	// Получаем информацию о команде
+	const op = "team.repository.GetByName"
+
 	team := &api.Team{TeamName: name}
 
-	// Получаем участников команды
-	sql := "SELECT user_id, username, is_active FROM users WHERE team_name = $1"
-	rows, err := tx.Query(ctx, sql, name)
+	rows, err := tx.Query(ctx, getByNameTeamQuery, name)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 	defer rows.Close()
 
@@ -56,13 +53,13 @@ func (r *TeamRepository) GetByName(ctx context.Context, tx pgx.Tx, name string) 
 	for rows.Next() {
 		var member api.TeamMember
 		if err := rows.Scan(&member.UserId, &member.Username, &member.IsActive); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("%s: %w", op, err)
 		}
 		members = append(members, member)
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 
 	team.Members = members

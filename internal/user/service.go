@@ -2,22 +2,21 @@ package user
 
 import (
 	"context"
-	"deplagene/avito-tech-internship/api"
+	"deplagene/avito-tech-internship/cmd/api"
 	"deplagene/avito-tech-internship/types"
+	"deplagene/avito-tech-internship/utils"
 	"fmt"
-	"log/slog" // Add slog import
+	"log/slog"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// Service реализует интерфейс types.UserService.
 type Service struct {
 	userRepo types.UserRepository
-	db       *pgxpool.Pool // Для управления транзакциями
-	logger   *slog.Logger  // Add logger field
+	db       *pgxpool.Pool
+	logger   *slog.Logger
 }
 
-// NewService создает новый экземпляр UserService.
 func NewService(userRepo types.UserRepository, db *pgxpool.Pool, logger *slog.Logger) *Service {
 	return &Service{
 		userRepo: userRepo,
@@ -28,39 +27,37 @@ func NewService(userRepo types.UserRepository, db *pgxpool.Pool, logger *slog.Lo
 
 // SetUserIsActive устанавливает флаг активности пользователя.
 func (s *Service) SetUserIsActive(ctx context.Context, userID string, isActive bool) (*api.User, error) {
+	const op = "user.service.SetUserIsActive"
+
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 	defer func() {
 		if r := recover(); r != nil {
 			if err := tx.Rollback(ctx); err != nil {
-				s.logger.Error("failed to rollback transaction after panic", "error", err)
+				s.logger.Error("failed to rollback transaction after panic", utils.Err(err))
 			}
 			panic(r)
 		} else if err != nil {
 			if err := tx.Rollback(ctx); err != nil {
-				s.logger.Error("failed to rollback transaction", "error", err)
+				s.logger.Error("failed to rollback transaction", utils.Err(err))
 			}
 		} else {
 			err = tx.Commit(ctx)
 		}
 	}()
 
-	// Проверяем, существует ли пользователь
 	existingUser, err := s.userRepo.GetByID(ctx, tx, userID)
 	if err != nil {
-		if err.Error() == "user not found" { // TODO: Use custom error type
-			return nil, fmt.Errorf("user not found") // TODO: Use custom error type (NOT_FOUND)
-		}
-		return nil, err
+		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 
 	if err := s.userRepo.SetIsActive(ctx, tx, userID, isActive); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 
-	existingUser.IsActive = isActive // Обновляем статус в возвращаемом объекте
+	existingUser.IsActive = isActive
 	return existingUser, nil
 }
 

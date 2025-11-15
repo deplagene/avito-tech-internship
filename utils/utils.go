@@ -3,6 +3,7 @@ package utils
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 )
 
@@ -33,6 +34,24 @@ func WriteJson(w http.ResponseWriter, status int, v any) error {
 	return nil
 }
 
-func WriteError(w http.ResponseWriter, status int, err error) {
+func WriteError(w http.ResponseWriter, logger *slog.Logger, status int, err error) {
+	const op = "utils.WriteError"
 
+	logger.Error("request failed", "status", status, Err(err))
+
+	if status >= 500 {
+		msg := map[string]string{"error": "internal server error"}
+
+		if err := WriteJson(w, status, msg); err != nil {
+			logger.Error("failed to write 5xx response", Err(err))
+		}
+
+		return
+	}
+
+	msg := map[string]string{"error": err.Error()}
+	if err := WriteJson(w, status, msg); err != nil {
+		logger.Error("failed to write 4xx response", Err(err))
+
+	}
 }

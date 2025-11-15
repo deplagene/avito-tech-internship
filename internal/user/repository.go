@@ -2,15 +2,14 @@ package user
 
 import (
 	"context"
-	"deplagene/avito-tech-internship/api"   // Замените на ваш путь к модулю
-	"deplagene/avito-tech-internship/types" // Замените на ваш путь к модулю
+	"deplagene/avito-tech-internship/cmd/api"
+	"deplagene/avito-tech-internship/types"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// UserRepository реализует интерфейс types.UserRepository для работы с PostgreSQL.
 type UserRepository struct {
 	db *pgxpool.Pool
 }
@@ -22,69 +21,75 @@ func NewUserRepository(db *pgxpool.Pool) *UserRepository {
 
 // Upsert создает или обновляет пользователя.
 func (r *UserRepository) Upsert(ctx context.Context, tx pgx.Tx, user api.TeamMember, teamName string) error {
-	sql := `
-		INSERT INTO users (user_id, username, team_name, is_active)
-		VALUES ($1, $2, $3, $4)
-		ON CONFLICT (user_id) DO UPDATE
-		SET username = EXCLUDED.username, team_name = EXCLUDED.team_name, is_active = EXCLUDED.is_active
-	`
-	_, err := tx.Exec(ctx, sql, user.UserId, user.Username, teamName, user.IsActive)
-	return err
+	const op = "user.repository.Upsert"
+
+	_, err := tx.Exec(ctx, upsertUserQuery, user.UserId, user.Username, teamName, user.IsActive)
+	if err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+
+	return nil
 }
 
 // GetByID возвращает пользователя по его ID.
 func (r *UserRepository) GetByID(ctx context.Context, tx pgx.Tx, id string) (*api.User, error) {
+	const op = "user.repository.GetByID"
+
 	user := &api.User{}
-	sql := "SELECT user_id, username, team_name, is_active FROM users WHERE user_id = $1"
-	err := tx.QueryRow(ctx, sql, id).Scan(&user.UserId, &user.Username, &user.TeamName, &user.IsActive)
-	if err == pgx.ErrNoRows {
-		return nil, fmt.Errorf("user not found") // TODO: Define custom error types
+
+	err := tx.QueryRow(ctx, getBydIdUserQuery, id).Scan(&user.UserId, &user.Username, &user.TeamName, &user.IsActive)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", op, err)
 	}
-	return user, err
+
+	return user, nil
 }
 
 // SetIsActive устанавливает флаг активности пользователя.
 func (r *UserRepository) SetIsActive(ctx context.Context, tx pgx.Tx, id string, isActive bool) error {
-	sql := "UPDATE users SET is_active = $1 WHERE user_id = $2"
-	_, err := tx.Exec(ctx, sql, isActive, id)
-	return err
+	const op = "user.repository.SetIsActive"
+
+	_, err := tx.Exec(ctx, setIsActiveUserQuery, isActive, id)
+	if err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+
+	return nil
 }
 
 // GetActiveUsersByTeam возвращает активных пользователей из команды, исключая указанного пользователя.
 func (r *UserRepository) GetActiveUsersByTeam(ctx context.Context, tx pgx.Tx, teamName string, excludeUserID string, limit int) ([]api.User, error) {
+	const op = "user.repository.GetActiveUsersByTeam"
+
 	var users []api.User
-	sql := `
-		SELECT user_id, username, team_name, is_active
-		FROM users
-		WHERE team_name = $1 AND is_active = TRUE AND user_id != $2
-		ORDER BY RANDOM()
-		LIMIT $3
-	`
-	rows, err := tx.Query(ctx, sql, teamName, excludeUserID, limit)
+
+	rows, err := tx.Query(ctx, getActiveUsersByTeamQuery, teamName, excludeUserID, limit)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 	defer rows.Close()
 
 	for rows.Next() {
 		var user api.User
 		if err := rows.Scan(&user.UserId, &user.Username, &user.TeamName, &user.IsActive); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("%s: %w", op, err)
 		}
 		users = append(users, user)
 	}
-	return users, rows.Err()
+	return users, fmt.Errorf("%s: %w", op, rows.Err())
 }
 
 // GetTeamByUserID возвращает имя команды, к которой принадлежит пользователь.
 func (r *UserRepository) GetTeamByUserID(ctx context.Context, tx pgx.Tx, userID string) (string, error) {
+	const op = "user.repository.GetTeamByUserID"
+
 	var teamName string
-	sql := "SELECT team_name FROM users WHERE user_id = $1"
-	err := tx.QueryRow(ctx, sql, userID).Scan(&teamName)
-	if err == pgx.ErrNoRows {
-		return "", fmt.Errorf("user not found") // TODO: Define custom error types
+
+	err := tx.QueryRow(ctx, getTeamByUserIdQuery, userID).Scan(&teamName)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", op, err)
 	}
-	return teamName, err
+	return teamName, nil
 }
 
 // Проверка соответствия интерфейсу во время компиляции

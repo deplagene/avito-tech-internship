@@ -2,7 +2,7 @@ package types
 
 import (
 	"context"
-	"deplagene/avito-tech-internship/api" // Ваш путь к модулю
+	"deplagene/avito-tech-internship/cmd/api"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -23,7 +23,6 @@ type UserRepository interface {
 }
 
 // PullRequestRepository определяет методы для работы с Pull Request'ами.
-
 type PullRequestRepository interface {
 	Create(ctx context.Context, tx pgx.Tx, pr api.PullRequest) error
 	GetByID(ctx context.Context, tx pgx.Tx, id string) (*api.PullRequest, error)
@@ -33,31 +32,18 @@ type PullRequestRepository interface {
 	GetByReviewer(ctx context.Context, tx pgx.Tx, userID string) ([]api.PullRequestShort, error)
 }
 
-// PullRequestStore interface from original types.go, updated to use api.PullRequest
-
-// Этот интерфейс теперь избыточен, если используется PullRequestRepository.
-
-// Рассмотрите возможность его удаления или объединения его функциональности в PullRequestRepository.
-
-type PullRequestStore interface {
-	Create(ctx context.Context, pr api.PullRequest) error // Обновлено для использования api.PullRequest
-}
-
 // TeamService определяет методы бизнес-логики для работы с командами.
-
 type TeamService interface {
 	CreateTeam(ctx context.Context, team api.Team) (*api.Team, error)
 	GetTeam(ctx context.Context, name string) (*api.Team, error)
 }
 
 // UserService определяет методы бизнес-логики для работы с пользователями.
-
 type UserService interface {
 	SetUserIsActive(ctx context.Context, userID string, isActive bool) (*api.User, error)
 }
 
 // PullRequestService определяет методы бизнес-логики для работы с Pull Request'ами.
-
 type PullRequestService interface {
 	CreatePullRequest(ctx context.Context, pr api.PullRequest) (*api.PullRequest, error)
 	MergePullRequest(ctx context.Context, prID string) (*api.PullRequest, error)

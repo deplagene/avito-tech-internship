@@ -3,6 +3,7 @@ package test
 import (
 	"bytes"
 	"context"
+	"deplagene/avito-tech-internship/cmd/api"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,8 +12,6 @@ import (
 	"os/exec"
 	"testing"
 	"time"
-
-	"deplagene/avito-tech-internship/api"
 )
 
 const (
@@ -26,7 +25,7 @@ func TestMain(m *testing.M) {
 	os.Setenv("ENV", "test")
 	os.Setenv("POSTGRES_DB", "avito_trainee_test")
 
-	// 1. Запускаем docker-compose
+	// Запускаем docker-compose
 	fmt.Println("Starting docker-compose for integration tests...")
 	cmd := exec.Command("docker-compose", "up", "--build", "-d")
 	cmd.Stdout = os.Stdout
@@ -36,19 +35,19 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	// 2. Ждем, пока приложение будет готово
+	// Ожидаем готовность приложения
 	fmt.Println("Waiting for application to be ready...")
-	if err := waitForApp(appURL+"/health", 60*time.Second); err != nil { // Предполагаем наличие /health эндпоинта
+	if err := waitForApp(appURL+"/health", 60*time.Second); err != nil {
 		fmt.Printf("Application not ready: %v\n", err)
 		teardownTestEnvironment()
 		os.Exit(1)
 	}
 	fmt.Println("Application is ready.")
 
-	// 3. Запускаем тесты
+	// Запускаем тесты
 	code := m.Run()
 
-	// 4. Останавливаем docker-compose
+	// Останавливаем docker-compose
 	fmt.Println("Tearing down test environment...")
 	teardownTestEnvironment()
 
@@ -80,7 +79,7 @@ func waitForApp(url string, timeout time.Duration) error {
 }
 
 func teardownTestEnvironment() {
-	cmd := exec.Command("docker-compose", "down", "-v") // -v для удаления томов
+	cmd := exec.Command("docker-compose", "down", "-v")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
@@ -90,11 +89,9 @@ func teardownTestEnvironment() {
 
 func clearDatabase() {
 	// TODO: Реализовать очистку базы данных перед каждым тестом
-	// Это может быть сброс схемы или удаление всех данных
-	// Для простоты пока пропустим, но в реальном проекте это важно
 }
 
-func makeRequest(t *testing.T, method, path string, body interface{}) (*http.Response, []byte) {
+func makeRequest(t *testing.T, method, path string, body any) (*http.Response, []byte) {
 	var reqBody io.Reader
 	if body != nil {
 		jsonBody, err := json.Marshal(body)
@@ -126,7 +123,8 @@ func makeRequest(t *testing.T, method, path string, body interface{}) (*http.Res
 }
 
 func TestPostTeamAdd(t *testing.T) {
-	clearDatabase() // Очищаем БД перед тестом
+	// ! Пока заглушка
+	clearDatabase()
 
 	teamName := "test-team"
 	user1ID := "u1"
@@ -159,7 +157,6 @@ func TestPostTeamAdd(t *testing.T) {
 	if len(response.Team.Members) != 2 {
 		t.Errorf("Expected 2 members, got %d", len(response.Team.Members))
 	}
-	// Дополнительные проверки членов команды
 }
 
 // TODO: Добавить другие интеграционные тесты для всех эндпоинтов

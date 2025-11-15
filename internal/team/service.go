@@ -2,23 +2,22 @@ package team
 
 import (
 	"context"
-	"deplagene/avito-tech-internship/api"
+	"deplagene/avito-tech-internship/cmd/api"
 	"deplagene/avito-tech-internship/types"
+	"deplagene/avito-tech-internship/utils"
 	"fmt"
 	"log/slog"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// Service реализует интерфейс types.TeamService.
 type Service struct {
 	teamRepo types.TeamRepository
 	userRepo types.UserRepository
-	db       *pgxpool.Pool // Для управления транзакциями
-	logger   *slog.Logger  // Add logger field
+	db       *pgxpool.Pool
+	logger   *slog.Logger
 }
 
-// NewService создает новый экземпляр TeamService.
 func NewService(teamRepo types.TeamRepository, userRepo types.UserRepository, db *pgxpool.Pool, logger *slog.Logger) *Service {
 	return &Service{
 		teamRepo: teamRepo,
@@ -30,36 +29,37 @@ func NewService(teamRepo types.TeamRepository, userRepo types.UserRepository, db
 
 // CreateTeam создает новую команду и ее участников.
 func (s *Service) CreateTeam(ctx context.Context, team api.Team) (*api.Team, error) {
+	const op = "team.service.CreateTeam"
+
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 	defer func() {
 		if r := recover(); r != nil {
 			if err := tx.Rollback(ctx); err != nil {
-				s.logger.Error("failed to rollback transaction after panic", "error", err)
+				s.logger.Error("failed to rollback transaction after panic", utils.Err(err))
 			}
 			panic(r)
 		} else if err != nil {
 			if err := tx.Rollback(ctx); err != nil {
-				s.logger.Error("failed to rollback transaction", "error", err)
+				s.logger.Error("failed to rollback transaction", utils.Err(err))
 			}
 		} else {
 			err = tx.Commit(ctx)
 		}
 	}()
 
-	// Проверяем, существует ли команда
 	existingTeam, err := s.teamRepo.GetByName(ctx, tx, team.TeamName)
-	if err != nil && err.Error() != "team not found" { // TODO: Use custom error type
-		return nil, err
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", op, err)
 	}
-	if existingTeam != nil && existingTeam.TeamName == team.TeamName {
-		return nil, fmt.Errorf("team already exists") // TODO: Use custom error type (TEAM_EXISTS)
+	if existingTeam != nil {
+		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 
 	if err = s.teamRepo.Create(ctx, tx, team); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 
 	return &team, nil
@@ -67,19 +67,21 @@ func (s *Service) CreateTeam(ctx context.Context, team api.Team) (*api.Team, err
 
 // GetTeam возвращает команду по имени.
 func (s *Service) GetTeam(ctx context.Context, name string) (*api.Team, error) {
+	const op = "team.service.GetTeam"
+
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 	defer func() {
 		if r := recover(); r != nil {
 			if err := tx.Rollback(ctx); err != nil {
-				s.logger.Error("failed to rollback transaction after panic", "error", err)
+				s.logger.Error("failed to rollback transaction after panic", utils.Err(err))
 			}
 			panic(r)
 		} else if err != nil {
 			if err := tx.Rollback(ctx); err != nil {
-				s.logger.Error("failed to rollback transaction", "error", err)
+				s.logger.Error("failed to rollback transaction", utils.Err(err))
 			}
 		} else {
 			err = tx.Commit(ctx)
@@ -88,10 +90,7 @@ func (s *Service) GetTeam(ctx context.Context, name string) (*api.Team, error) {
 
 	team, err := s.teamRepo.GetByName(ctx, tx, name)
 	if err != nil {
-		if err.Error() == "team not found" { // TODO: Use custom error type
-			return nil, fmt.Errorf("team not found") // TODO: Use custom error type (NOT_FOUND)
-		}
-		return nil, err
+		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 	return team, nil
 }
