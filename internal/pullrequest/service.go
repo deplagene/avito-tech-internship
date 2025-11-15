@@ -65,13 +65,16 @@ func (s *Service) CreatePullRequest(ctx context.Context, pr api.PullRequest) (*a
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}
-	if existingPR != nil && existingPR.PullRequestId == pr.PullRequestId {
-		return nil, fmt.Errorf("%s: %w", op, err)
+	if existingPR != nil {
+		return nil, types.ErrAlreadyExists
 	}
 
 	author, err := s.userRepo.GetByID(ctx, tx, pr.AuthorId)
 	if err != nil {
 		return nil, err
+	}
+	if author == nil {
+		return nil, types.ErrNotFound
 	}
 
 	candidates, err := s.userRepo.GetActiveUsersByTeam(ctx, tx, author.TeamName, author.UserId, 2)
@@ -121,6 +124,9 @@ func (s *Service) MergePullRequest(ctx context.Context, prID string) (*api.PullR
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}
+	if pr == nil {
+		return nil, types.ErrNotFound
+	}
 
 	if pr.Status == api.PullRequestStatusMERGED {
 		return pr, nil // ! если уже MERGED, просто возвращаем текущее состояние
@@ -162,14 +168,17 @@ func (s *Service) ReassignReviewer(ctx context.Context, prID, oldReviewerID stri
 	if err != nil {
 		return nil, "", fmt.Errorf("%s: %w", op, err)
 	}
+	if pr == nil {
+		return nil, "", types.ErrNotFound
+	}
 
 	if pr.Status == api.PullRequestStatusMERGED {
-		return nil, "", fmt.Errorf("%s: %w", op, err)
+		return nil, "", types.ErrPRMerged
 	}
 
 	isAssigned := slices.Contains(pr.AssignedReviewers, oldReviewerID)
 	if !isAssigned {
-		return nil, "", fmt.Errorf("%s: %w", op, err)
+		return nil, "", types.ErrNotAssigned
 	}
 
 	oldReviewerTeam, err := s.userRepo.GetTeamByUserID(ctx, tx, oldReviewerID)
@@ -180,7 +189,7 @@ func (s *Service) ReassignReviewer(ctx context.Context, prID, oldReviewerID stri
 	var currentReviewers []string
 	currentReviewers = append(currentReviewers, pr.AssignedReviewers...)
 
-	allTeamMembers, err := s.userRepo.GetActiveUsersByTeam(ctx, tx, oldReviewerTeam, "", 0)
+	allTeamMembers, err := s.userRepo.GetActiveUsersByTeam(ctx, tx, oldReviewerTeam, oldReviewerID, 0)
 	if err != nil {
 		return nil, "", fmt.Errorf("%s: %w", op, err)
 	}
@@ -188,13 +197,13 @@ func (s *Service) ReassignReviewer(ctx context.Context, prID, oldReviewerID stri
 	var replacementCandidates []api.User
 	for _, member := range allTeamMembers {
 		isCurrentReviewer := slices.Contains(currentReviewers, member.UserId)
-		if member.UserId != oldReviewerID && !isCurrentReviewer {
+		if member.UserId != oldReviewerID && member.UserId != pr.AuthorId && !isCurrentReviewer {
 			replacementCandidates = append(replacementCandidates, member)
 		}
 	}
 
 	if len(replacementCandidates) == 0 {
-		return nil, "", fmt.Errorf("%s: %w", op, err)
+		return nil, "", types.ErrNoCandidate
 	}
 
 	source := rand.NewSource(time.Now().UnixNano())
@@ -219,12 +228,13 @@ func (s *Service) ReassignReviewer(ctx context.Context, prID, oldReviewerID stri
 }
 
 // GetPullRequestsByReviewer возвращает PR'ы, где пользователь назначен ревьювером.
-func (s *Service) GetPullRequestsByReviewer(ctx context.Context, userID string) ([]api.PullRequestShort, error) {
+func (s *Service) GetPullRequestsByReviewer(ctx context.Context, userID string) (prs []api.PullRequestShort, err error) {
 	const op = "pullrequest.service.GetPullRequestsByReviewer"
 
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", op, err)
+		err = fmt.Errorf("%s: %w", op, err)
+		return
 	}
 	defer func() {
 		if r := recover(); r != nil {
@@ -241,11 +251,28 @@ func (s *Service) GetPullRequestsByReviewer(ctx context.Context, userID string) 
 		}
 	}()
 
-	prs, err := s.prRepo.GetByReviewer(ctx, tx, userID)
+	user, err := s.userRepo.GetByID(ctx, tx, userID)
+	s.logger.Info("GetPullRequestsByReviewer: after GetByID", "error", err)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", op, err)
+		err = fmt.Errorf("%s: %w", op, err)
+		s.logger.Info("GetPullRequestsByReviewer: after GetByID error wrap", "error", err)
+		return
 	}
-	return prs, nil
+	if user == nil {
+		err = types.ErrNotFound
+		s.logger.Info("GetPullRequestsByReviewer: user not found", "error", err)
+		return
+	}
+
+	prs, err = s.prRepo.GetByReviewer(ctx, tx, userID)
+	s.logger.Info("GetPullRequestsByReviewer: after GetByReviewer", "error", err)
+	if err != nil {
+		err = fmt.Errorf("%s: %w", op, err)
+		s.logger.Info("GetPullRequestsByReviewer: after GetByReviewer error wrap", "error", err)
+		return
+	}
+	s.logger.Info("GetPullRequestsByReviewer: before return", "error", err)
+	return
 }
 
 // Проверка соответствия интерфейсу во время компиляции

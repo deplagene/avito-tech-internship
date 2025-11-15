@@ -4,6 +4,8 @@ import (
 	"deplagene/avito-tech-internship/cmd/api"
 	"deplagene/avito-tech-internship/types"
 	"deplagene/avito-tech-internship/utils"
+	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 )
@@ -29,9 +31,39 @@ func NewHandler(
 	}
 }
 
-// sendError отправляет стандартизированный ответ об ошибке.
-func (h *Handler) sendError(w http.ResponseWriter, r *http.Request, code api.ErrorResponseErrorCode, message string, httpStatus int) {
-	h.logger.Error("API Error", "code", code, "message", message, "status", httpStatus, "path", r.URL.Path)
+// handleError отправляет стандартизированный ответ об ошибке.
+func (h *Handler) handleError(w http.ResponseWriter, r *http.Request, err error) {
+	h.logger.Info("handleError received error", "error", err.Error(), "type", fmt.Sprintf("%T", err))
+	var code api.ErrorResponseErrorCode
+	var message string
+	var httpStatus int
+
+	switch {
+	case errors.Is(err, types.ErrNotFound):
+		code = api.NOTFOUND
+		message = "resource not found"
+		httpStatus = http.StatusNotFound
+	case errors.Is(err, types.ErrAlreadyExists):
+		code = api.TEAMEXISTS
+		message = "resource already exists"
+		httpStatus = http.StatusConflict
+	case errors.Is(err, types.ErrPRMerged):
+		code = api.PRMERGED
+		message = "cannot reassign on merged PR"
+		httpStatus = http.StatusConflict
+	case errors.Is(err, types.ErrNotAssigned):
+		code = api.NOTASSIGNED
+		message = "reviewer is not assigned to this PR"
+		httpStatus = http.StatusConflict
+	case errors.Is(err, types.ErrNoCandidate):
+		code = api.NOCANDIDATE
+		message = "no active replacement candidate in team"
+		httpStatus = http.StatusConflict
+	default:
+		h.logger.Error("Internal Server Error", "error", err, "path", r.URL.Path)
+		utils.WriteError(w, h.logger, http.StatusInternalServerError, err)
+		return
+	}
 
 	resp := api.ErrorResponse{
 		Error: struct {
@@ -44,7 +76,8 @@ func (h *Handler) sendError(w http.ResponseWriter, r *http.Request, code api.Err
 	}
 
 	if err := utils.WriteJson(w, httpStatus, resp); err != nil {
-		utils.WriteError(w, h.logger, httpStatus, err)
+		h.logger.Error("Failed to write error response", "error", err, "path", r.URL.Path)
+		utils.WriteError(w, h.logger, http.StatusInternalServerError, err)
 	}
 }
 
@@ -53,6 +86,7 @@ func (h *Handler) PostPullRequestCreate(w http.ResponseWriter, r *http.Request) 
 	var body api.PostPullRequestCreateJSONRequestBody
 	if err := utils.ParseJson(r, &body); err != nil {
 		utils.WriteError(w, h.logger, http.StatusBadRequest, err)
+		return
 	}
 
 	pr := api.PullRequest{
@@ -63,11 +97,18 @@ func (h *Handler) PostPullRequestCreate(w http.ResponseWriter, r *http.Request) 
 
 	createdPR, err := h.prService.CreatePullRequest(r.Context(), pr)
 	if err != nil {
-		utils.WriteError(w, h.logger, http.StatusInternalServerError, err)
+		h.handleError(w, r, err)
+		return
 	}
 
-	if err := utils.WriteJson(w, http.StatusCreated, map[string]string{"pull_request_id": createdPR.PullRequestId}); err != nil {
-		utils.WriteError(w, h.logger, http.StatusInternalServerError, err)
+	response := struct {
+		PR *api.PullRequest `json:"pr"`
+	}{
+		PR: createdPR,
+	}
+
+	if err := utils.WriteJson(w, http.StatusCreated, response); err != nil {
+		h.handleError(w, r, err)
 	}
 }
 
@@ -76,15 +117,23 @@ func (h *Handler) PostPullRequestMerge(w http.ResponseWriter, r *http.Request) {
 	var body api.PostPullRequestMergeJSONRequestBody
 	if err := utils.ParseJson(r, &body); err != nil {
 		utils.WriteError(w, h.logger, http.StatusBadRequest, err)
+		return
 	}
 
 	mergedPR, err := h.prService.MergePullRequest(r.Context(), body.PullRequestId)
 	if err != nil {
-		utils.WriteError(w, h.logger, http.StatusInternalServerError, err)
+		h.handleError(w, r, err)
+		return
 	}
 
-	if err := utils.WriteJson(w, http.StatusOK, map[string]string{"pull_request_id": mergedPR.PullRequestId}); err != nil {
-		utils.WriteError(w, h.logger, http.StatusInternalServerError, err)
+	response := struct {
+		PR *api.PullRequest `json:"pr"`
+	}{
+		PR: mergedPR,
+	}
+
+	if err := utils.WriteJson(w, http.StatusOK, response); err != nil {
+		h.handleError(w, r, err)
 	}
 }
 
@@ -93,15 +142,25 @@ func (h *Handler) PostPullRequestReassign(w http.ResponseWriter, r *http.Request
 	var body api.PostPullRequestReassignJSONRequestBody
 	if err := utils.ParseJson(r, &body); err != nil {
 		utils.WriteError(w, h.logger, http.StatusBadRequest, err)
+		return
 	}
 
 	reassignedPR, newReviewerID, err := h.prService.ReassignReviewer(r.Context(), body.PullRequestId, body.OldUserId)
 	if err != nil {
-		utils.WriteError(w, h.logger, http.StatusInternalServerError, err)
+		h.handleError(w, r, err)
+		return
 	}
 
-	if err := utils.WriteJson(w, http.StatusOK, map[string]string{"pull_request_id": reassignedPR.PullRequestId, "new_reviewer_id": newReviewerID}); err != nil {
-		utils.WriteError(w, h.logger, http.StatusInternalServerError, err)
+	response := struct {
+		PR         *api.PullRequest `json:"pr"`
+		ReplacedBy string           `json:"replaced_by"`
+	}{
+		PR:         reassignedPR,
+		ReplacedBy: newReviewerID,
+	}
+
+	if err := utils.WriteJson(w, http.StatusOK, response); err != nil {
+		h.handleError(w, r, err)
 	}
 }
 
@@ -110,15 +169,23 @@ func (h *Handler) PostTeamAdd(w http.ResponseWriter, r *http.Request) {
 	var body api.PostTeamAddJSONRequestBody
 	if err := utils.ParseJson(r, &body); err != nil {
 		utils.WriteError(w, h.logger, http.StatusBadRequest, err)
+		return
 	}
 
 	createdTeam, err := h.teamService.CreateTeam(r.Context(), body)
 	if err != nil {
-		utils.WriteError(w, h.logger, http.StatusInternalServerError, err)
+		h.handleError(w, r, err)
+		return
 	}
 
-	if err := utils.WriteJson(w, http.StatusCreated, map[string]string{"team_name": createdTeam.TeamName}); err != nil {
-		utils.WriteError(w, h.logger, http.StatusInternalServerError, err)
+	response := struct {
+		Team *api.Team `json:"team"`
+	}{
+		Team: createdTeam,
+	}
+
+	if err := utils.WriteJson(w, http.StatusCreated, response); err != nil {
+		h.handleError(w, r, err)
 	}
 }
 
@@ -126,11 +193,12 @@ func (h *Handler) PostTeamAdd(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) GetTeamGet(w http.ResponseWriter, r *http.Request, params api.GetTeamGetParams) {
 	team, err := h.teamService.GetTeam(r.Context(), params.TeamName)
 	if err != nil {
-		utils.WriteError(w, h.logger, http.StatusInternalServerError, err)
+		h.handleError(w, r, err)
+		return
 	}
 
-	if err := utils.WriteJson(w, http.StatusOK, map[string]string{"team_name": team.TeamName}); err != nil {
-		utils.WriteError(w, h.logger, http.StatusInternalServerError, err)
+	if err := utils.WriteJson(w, http.StatusOK, team); err != nil {
+		h.handleError(w, r, err)
 	}
 }
 
@@ -138,11 +206,20 @@ func (h *Handler) GetTeamGet(w http.ResponseWriter, r *http.Request, params api.
 func (h *Handler) GetUsersGetReview(w http.ResponseWriter, r *http.Request, params api.GetUsersGetReviewParams) {
 	prs, err := h.prService.GetPullRequestsByReviewer(r.Context(), params.UserId)
 	if err != nil {
-		utils.WriteError(w, h.logger, http.StatusInternalServerError, err)
+		h.handleError(w, r, err)
+		return
 	}
 
-	if err := utils.WriteJson(w, http.StatusOK, prs); err != nil {
-		utils.WriteError(w, h.logger, http.StatusInternalServerError, err)
+	response := struct {
+		UserID       string                 `json:"user_id"`
+		PullRequests []api.PullRequestShort `json:"pull_requests"`
+	}{
+		UserID:       params.UserId,
+		PullRequests: prs,
+	}
+
+	if err := utils.WriteJson(w, http.StatusOK, response); err != nil {
+		h.handleError(w, r, err)
 	}
 }
 
@@ -151,22 +228,30 @@ func (h *Handler) PostUsersSetIsActive(w http.ResponseWriter, r *http.Request) {
 	var body api.PostUsersSetIsActiveJSONRequestBody
 	if err := utils.ParseJson(r, &body); err != nil {
 		utils.WriteError(w, h.logger, http.StatusBadRequest, err)
+		return
 	}
 
 	updatedUser, err := h.userService.SetUserIsActive(r.Context(), body.UserId, body.IsActive)
 	if err != nil {
-		utils.WriteError(w, h.logger, http.StatusInternalServerError, err)
+		h.handleError(w, r, err)
+		return
 	}
 
-	if err := utils.WriteJson(w, http.StatusOK, map[string]string{"user_id": updatedUser.UserId}); err != nil {
-		utils.WriteError(w, h.logger, http.StatusInternalServerError, err)
+	response := struct {
+		User *api.User `json:"user"`
+	}{
+		User: updatedUser,
+	}
+
+	if err := utils.WriteJson(w, http.StatusOK, response); err != nil {
+		h.handleError(w, r, err)
 	}
 }
 
 // GetHealth проверяет работоспособность сервиса
 func (h *Handler) GetHealth(w http.ResponseWriter, r *http.Request) {
 	if err := utils.WriteJson(w, http.StatusOK, map[string]string{"status": "ok"}); err != nil {
-		utils.WriteError(w, h.logger, http.StatusInternalServerError, err)
+		h.handleError(w, r, err)
 	}
 }
 

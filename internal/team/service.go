@@ -28,7 +28,7 @@ func NewService(teamRepo types.TeamRepository, userRepo types.UserRepository, db
 }
 
 // CreateTeam создает новую команду и ее участников.
-func (s *Service) CreateTeam(ctx context.Context, team api.Team) (*api.Team, error) {
+func (s *Service) CreateTeam(ctx context.Context, team api.Team) (createdTeam *api.Team, err error) {
 	const op = "team.service.CreateTeam"
 
 	tx, err := s.db.Begin(ctx)
@@ -52,14 +52,18 @@ func (s *Service) CreateTeam(ctx context.Context, team api.Team) (*api.Team, err
 
 	existingTeam, err := s.teamRepo.GetByName(ctx, tx, team.TeamName)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", op, err)
+		return createdTeam, fmt.Errorf("%s: %w", op, err)
 	}
-	if existingTeam != nil {
-		return nil, fmt.Errorf("%s: %w", op, err)
+	if existingTeam == nil {
+		if err = s.teamRepo.Create(ctx, tx, team); err != nil {
+			return createdTeam, fmt.Errorf("%s: %w", op, err)
+		}
 	}
 
-	if err = s.teamRepo.Create(ctx, tx, team); err != nil {
-		return nil, fmt.Errorf("%s: %w", op, err)
+	for _, member := range team.Members {
+		if err = s.userRepo.Upsert(ctx, tx, member, team.TeamName); err != nil {
+			return createdTeam, fmt.Errorf("%s: %w", op, err)
+		}
 	}
 
 	return &team, nil
@@ -91,6 +95,9 @@ func (s *Service) GetTeam(ctx context.Context, name string) (*api.Team, error) {
 	team, err := s.teamRepo.GetByName(ctx, tx, name)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+	if team == nil {
+		return nil, types.ErrNotFound
 	}
 	return team, nil
 }

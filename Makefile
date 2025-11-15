@@ -12,52 +12,47 @@ ENV ?= development
 
 MODULE_PATH=deplagene/avito-tech-internship
 
-# Build the application
+# Собрать приложение
 build:
 	@echo "Building $(APP_NAME)..."
 	@go build -o $(BUILD_DIR)/$(APP_NAME) ./cmd
 
-# Run the application locally
+# Запустить локально
 run: build
 	@echo "Running $(APP_NAME)..."
 	@HTTP_PORT=$(HTTP_PORT) DATABASE_URL=$(DATABASE_URL) ENV=$(ENV) $(BUILD_DIR)/$(APP_NAME)
 
-# Run unit tests
+# Запустить юнит-тесты
 test:
 	@echo "Running unit tests..."
 	@go test -v $(shell go list ./... | grep -v /test)
 
-# Run integration tests
-test-integration:
-	@echo "Running integration tests..."
-	@DATABASE_URL=$(TEST_DATABASE_URL) ENV=test go test -v ./test/...
-
-# Start Docker Compose environment
+# Запуск Докер-композа
 docker-up:
 	@echo "Starting Docker Compose environment..."
 	@docker-compose up --build -d
 
-# Stop Docker Compose environment
+# Остановка Докер-композа
 docker-down:
 	@echo "Stopping Docker Compose environment..."
 	@docker-compose down -v
 
-# Apply database migrations
+# Применить миграции
 migrate-up:
 	@echo "Applying database migrations..."
 	@docker-compose run --rm app migrate -path /migrations -database "$(DATABASE_URL)" up
 
-# Rollback database migrations
+# Откатить миграции
 migrate-down:
 	@echo "Rolling back database migrations..."
 	@docker-compose run --rm app migrate -path /migrations -database "$(DATABASE_URL)" down
 
-# Run linter (golangci-lint)
+# Запустить линтер
 lint:
 	@echo "Running golangci-lint..."
 	@/home/deplagene/go/bin/golangci-lint run ./...
 
-# Clean up build artifacts
+# Очистка
 clean:
 	@echo "Cleaning up..."
 	@rm -rf $(BUILD_DIR)

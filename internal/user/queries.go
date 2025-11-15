@@ -16,12 +16,19 @@ var (
 		UPDATE users SET is_active = $1 WHERE user_id = $2;	
 	`
 
-	getActiveUsersByTeamQuery = `
+	getActiveUsersByTeamQueryWithLimit = `
 		SELECT user_id, username, team_name, is_active
 		FROM users
 		WHERE team_name = $1 AND is_active = TRUE AND user_id != $2
 		ORDER BY RANDOM()
 		LIMIT $3;	
+	`
+
+	getActiveUsersByTeamQueryNoLimit = `
+		SELECT user_id, username, team_name, is_active
+		FROM users
+		WHERE team_name = $1 AND is_active = TRUE AND user_id != $2
+		ORDER BY RANDOM();	
 	`
 
 	getTeamByUserIdQuery = `

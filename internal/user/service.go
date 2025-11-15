@@ -52,6 +52,9 @@ func (s *Service) SetUserIsActive(ctx context.Context, userID string, isActive b
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}
+	if existingUser == nil {
+		return nil, types.ErrNotFound
+	}
 
 	if err := s.userRepo.SetIsActive(ctx, tx, userID, isActive); err != nil {
 		return nil, fmt.Errorf("%s: %w", op, err)

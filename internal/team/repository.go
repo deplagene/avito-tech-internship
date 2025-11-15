@@ -62,6 +62,10 @@ func (r *TeamRepository) GetByName(ctx context.Context, tx pgx.Tx, name string) 
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 
+	if len(members) == 0 {
+		return nil, nil
+	}
+
 	team.Members = members
 	return team, nil
 }

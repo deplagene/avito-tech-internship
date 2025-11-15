@@ -4,6 +4,7 @@ import (
 	"context"
 	"deplagene/avito-tech-internship/cmd/api"
 	"deplagene/avito-tech-internship/types"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
@@ -37,8 +38,12 @@ func (r *UserRepository) GetByID(ctx context.Context, tx pgx.Tx, id string) (*ap
 
 	user := &api.User{}
 
-	err := tx.QueryRow(ctx, getBydIdUserQuery, id).Scan(&user.UserId, &user.Username, &user.TeamName, &user.IsActive)
+	row := tx.QueryRow(ctx, getBydIdUserQuery, id)
+	err := row.Scan(&user.UserId, &user.Username, &user.TeamName, &user.IsActive)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 
@@ -62,8 +67,18 @@ func (r *UserRepository) GetActiveUsersByTeam(ctx context.Context, tx pgx.Tx, te
 	const op = "user.repository.GetActiveUsersByTeam"
 
 	var users []api.User
+	var query string
+	var args []any
 
-	rows, err := tx.Query(ctx, getActiveUsersByTeamQuery, teamName, excludeUserID, limit)
+	if limit > 0 {
+		query = getActiveUsersByTeamQueryWithLimit
+		args = []interface{}{teamName, excludeUserID, limit}
+	} else {
+		query = getActiveUsersByTeamQueryNoLimit
+		args = []interface{}{teamName, excludeUserID}
+	}
+
+	rows, err := tx.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}
@@ -76,7 +91,10 @@ func (r *UserRepository) GetActiveUsersByTeam(ctx context.Context, tx pgx.Tx, te
 		}
 		users = append(users, user)
 	}
-	return users, fmt.Errorf("%s: %w", op, rows.Err())
+	if rows.Err() != nil {
+		return nil, fmt.Errorf("%s: %w", op, rows.Err())
+	}
+	return users, nil
 }
 
 // GetTeamByUserID возвращает имя команды, к которой принадлежит пользователь.

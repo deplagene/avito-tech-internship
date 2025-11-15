@@ -53,9 +53,12 @@ func (r *PullRequestRepository) GetByID(ctx context.Context, tx pgx.Tx, id strin
 		&pr.AssignedReviewers,
 	)
 	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}
-	
+
 	pr.Status = api.PullRequestStatus(statusStr)
 	return pr, nil
 }
@@ -114,7 +117,10 @@ func (r *PullRequestRepository) GetByReviewer(ctx context.Context, tx pgx.Tx, us
 		pr.Status = api.PullRequestShortStatus(statusStr)
 		prs = append(prs, pr)
 	}
-	return prs, fmt.Errorf("%s: %w", op, rows.Err())
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+	return prs, nil
 }
 
 // Проверка соответствия интерфейсу во время компиляции
